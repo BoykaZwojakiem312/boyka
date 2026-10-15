@@ -20,10 +20,10 @@ public final class Config {
     public int blocks = 50;            // 0-150
     public int mineKey = -1;           // kod GLFW, -1 = brak
 
-    // Komendy na klawisz
-    public String[] cmdText = {"/repair", "", ""};
-    public int[] cmdKey = {-1, -1, -1};
-    public boolean[] cmdAuto = {true, false, false};
+    // Auto Repair
+    public boolean repairOn = false;      // wysyłaj /repair
+    public boolean repairAllOn = false;   // wysyłaj /repair all
+    public int repairMinutes = 1;         // co ile minut (1-5)
 
     // Leave
     public boolean leaveEnabled = false;
@@ -57,13 +57,10 @@ public final class Config {
     }
 
     private void fix() {
-        if (cmdText == null || cmdText.length != 3) cmdText = new String[]{"/repair", "", ""};
-        for (int i = 0; i < 3; i++) if (cmdText[i] == null) cmdText[i] = "";
-        if (cmdKey == null || cmdKey.length != 3) cmdKey = new int[]{-1, -1, -1};
-        if (cmdAuto == null || cmdAuto.length != 3) cmdAuto = new boolean[]{true, false, false};
         if (friends == null) friends = new ArrayList<>();
         blocks = Math.max(0, Math.min(150, blocks));
         leaveRadius = Math.max(1, Math.min(50, leaveRadius));
+        repairMinutes = Math.max(1, Math.min(5, repairMinutes));
     }
 
     public boolean isFriend(String name) {

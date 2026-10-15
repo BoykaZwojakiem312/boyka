@@ -17,9 +17,13 @@ public final class AutoLeave {
             String name = other.getName().getString();
             if (c.isFriend(name)) continue;
             if (mc.player.squaredDistanceTo(other) <= r2) {
+                // po wylogowaniu opcja sama się wyłącza
+                c.leaveEnabled = false;
+                Config.save();
                 AutoMiner.reset(mc);
-                mc.player.networkHandler.getConnection()
-                        .disconnect(Text.literal("[BOYKA] Auto Leave: gracz " + name + " w zasięgu " + c.leaveRadius));
+                mc.player.networkHandler.getConnection().disconnect(Text.literal(
+                        "[BOYKA] Auto Leave: gracz " + name + " w zasięgu " + c.leaveRadius
+                                + " bloków. Auto Leave został wyłączony."));
                 return;
             }
         }

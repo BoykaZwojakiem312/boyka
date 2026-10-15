@@ -21,7 +21,8 @@ public final class AutoMiner {
     private static int swappedFrom = -1;
     private static boolean prevPause;
     private static int ticks;
-    private static final int[] lastSent = new int[3];
+    private static int repairTimer;
+    private static int repairAllAt = -1;
 
     private AutoMiner() {}
 
@@ -54,11 +55,13 @@ public final class AutoMiner {
                 swap(mc, c.toolSlot, toolHotbar);
             }
         }
+        // kierunek liczony raz, względem tego gdzie patrzysz w chwili startu
         Direction facing = p.getHorizontalFacing();
         dir = c.right ? facing.rotateYClockwise() : facing.rotateYCounterclockwise();
         start = p.getBlockPos();
         ticks = 0;
-        lastSent[0] = lastSent[1] = lastSent[2] = -1000;
+        repairTimer = 0;
+        repairAllAt = -1;
         prevPause = mc.options.pauseOnLostFocus;
         mc.options.pauseOnLostFocus = false; // pozwala na alt+tab bez pauzy
         active = true;
@@ -69,7 +72,7 @@ public final class AutoMiner {
         if (!active) return;
         active = false;
         mc.options.pauseOnLostFocus = prevPause;
-        mc.options.forwardKey.setPressed(false);
+        releaseKeys(mc);
         if (mc.interactionManager != null) mc.interactionManager.cancelBlockBreaking();
         if (mc.player != null && swappedFrom >= 0) swap(mc, swappedFrom, toolHotbar);
         swappedFrom = -1;
@@ -81,7 +84,7 @@ public final class AutoMiner {
         if (!active) return;
         active = false;
         mc.options.pauseOnLostFocus = prevPause;
-        mc.options.forwardKey.setPressed(false);
+        releaseKeys(mc);
         swappedFrom = -1;
     }
 
@@ -100,6 +103,25 @@ public final class AutoMiner {
         Config c = Config.get();
         ticks++;
 
+        // ---- Auto Repair ----
+        if (c.repairOn || c.repairAllOn) {
+            repairTimer++;
+            if (repairTimer >= c.repairMinutes * 60 * 20) {
+                repairTimer = 0;
+                if (c.repairOn) {
+                    BoykaMod.sendCommand(mc, "/repair");
+                    if (c.repairAllOn) repairAllAt = ticks + 40; // /repair all 2 sekundy później
+                } else {
+                    BoykaMod.sendCommand(mc, "/repair all");
+                }
+            }
+        }
+        if (repairAllAt >= 0 && ticks >= repairAllAt) {
+            repairAllAt = -1;
+            BoykaMod.sendCommand(mc, "/repair all");
+        }
+
+        // ---- Narzędzie ----
         if (toolHotbar >= 0) {
             p.getInventory().selectedSlot = toolHotbar;
             ItemStack tool = p.getInventory().getStack(toolHotbar);
@@ -107,26 +129,13 @@ public final class AutoMiner {
                 stop(mc, "Narzędzie zniknęło - stop.");
                 return;
             }
-            if (tool.isDamageable()) {
-                int left = tool.getMaxDamage() - tool.getDamage();
-                for (int i = 0; i < 3; i++) {
-                    if (c.cmdAuto[i] && !c.cmdText[i].isBlank()
-                            && left < tool.getMaxDamage() * 0.10 && ticks - lastSent[i] > 100) {
-                        BoykaMod.sendCommand(mc, c.cmdText[i]);
-                        lastSent[i] = ticks;
-                    }
-                }
-                if (left <= 1) {
-                    stop(mc, "Narzędzie prawie zepsute - stop.");
-                    return;
-                }
+            if (tool.isDamageable() && tool.getMaxDamage() - tool.getDamage() <= 1) {
+                stop(mc, "Narzędzie prawie zepsute - stop.");
+                return;
             }
         }
 
-        // patrz w kierunku kopania
-        float yaw = (float) Math.toDegrees(Math.atan2(-dir.getOffsetX(), dir.getOffsetZ()));
-        p.setYaw(yaw);
-        p.setPitch(0f);
+        // kamera jest wolna - nie ruszamy yaw/pitch
 
         BlockPos feet = p.getBlockPos();
         int traveled = (feet.getX() - start.getX()) * dir.getOffsetX()
@@ -160,12 +169,39 @@ public final class AutoMiner {
         }
 
         if (target != null) {
-            mc.options.forwardKey.setPressed(false);
+            steer(p, false);
             mc.interactionManager.updateBlockBreakingProgress(target, dir.getOpposite());
             p.swingHand(Hand.MAIN_HAND);
         } else {
-            mc.options.forwardKey.setPressed(true);
+            steer(p, true);
         }
+    }
+
+    /** Wciska klawisze ruchu tak, żeby iść w kierunku dir niezależnie od tego, gdzie patrzy kamera. */
+    private static void steer(ClientPlayerEntity p, boolean move) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        boolean f = false, b = false, l = false, r = false;
+        if (move) {
+            double dirYaw = Math.atan2(-dir.getOffsetX(), dir.getOffsetZ());
+            double rel = dirYaw - Math.toRadians(p.getYaw());
+            double fwd = Math.cos(rel);
+            double side = Math.sin(rel);
+            f = fwd > 0.38;
+            b = fwd < -0.38;
+            r = side > 0.38;
+            l = side < -0.38;
+        }
+        mc.options.forwardKey.setPressed(f);
+        mc.options.backKey.setPressed(b);
+        mc.options.leftKey.setPressed(l);
+        mc.options.rightKey.setPressed(r);
+    }
+
+    private static void releaseKeys(MinecraftClient mc) {
+        mc.options.forwardKey.setPressed(false);
+        mc.options.backKey.setPressed(false);
+        mc.options.leftKey.setPressed(false);
+        mc.options.rightKey.setPressed(false);
     }
 
     private static void swap(MinecraftClient mc, int slotId, int hotbar) {

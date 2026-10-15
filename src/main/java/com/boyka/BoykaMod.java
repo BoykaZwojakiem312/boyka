@@ -38,12 +38,7 @@ public class BoykaMod implements ClientModInitializer {
 
     private static void hotkeys(MinecraftClient mc) {
         long window = mc.getWindow().getHandle();
-        Config c = Config.get();
-        edge(window, c.mineKey, () -> AutoMiner.toggle(mc));
-        for (int i = 0; i < 3; i++) {
-            final int idx = i;
-            edge(window, c.cmdKey[i], () -> sendCommand(mc, c.cmdText[idx]));
-        }
+        edge(window, Config.get().mineKey, () -> AutoMiner.toggle(mc));
     }
 
     private static void edge(long window, int key, Runnable action) {

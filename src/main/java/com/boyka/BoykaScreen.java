@@ -73,17 +73,6 @@ public class BoykaScreen extends Screen {
         Config c = Config.get();
         addDrawableChild(new IntSlider(px + 14, py + 170, 162, 18, "Kratki", 0, 150, c.blocks, v -> c.blocks = v));
         addDrawableChild(keyButton(px + 80, py + 196, 96, 18, c.mineKey, MINE, "[ brak ]"));
-        for (int i = 0; i < 3; i++) {
-            int y0 = py + 72 + i * 38;
-            addDrawableChild(keyButton(rx + 22, y0, 84, 16, c.cmdKey[i], i, "add key"));
-            TextFieldWidget tf = new TextFieldWidget(textRenderer, rx, y0 + 18, 186, 16, Text.empty());
-            tf.setMaxLength(120);
-            tf.setText(c.cmdText[i]);
-            tf.setPlaceholder(Text.literal("np. /repair"));
-            final int idx = i;
-            tf.setChangedListener(s -> c.cmdText[idx] = s);
-            addDrawableChild(tf);
-        }
         addDrawableChild(ButtonWidget.builder(Text.literal(AutoMiner.active ? "STOP" : "START"), b -> {
             AutoMiner.toggle(client);
             close();
@@ -168,7 +157,7 @@ public class BoykaScreen extends Screen {
     private void renderMine(DrawContext ctx, int mx, int my) {
         Config c = Config.get();
         ctx.drawText(textRenderer, "Ekwipunek - kliknij narzędzie", px + 14, py + 58, C_TEXT, false);
-        ctx.drawText(textRenderer, "Komendy na klawisz", rx, py + 58, C_TEXT, false);
+        ctx.drawText(textRenderer, "Auto Repair", rx, py + 58, C_TEXT, false);
 
         for (int idx = 0; idx < 36; idx++) {
             int[] pos = slotPos(idx);
@@ -188,11 +177,18 @@ public class BoykaScreen extends Screen {
         checkbox(ctx, px + 84, py + 152, !c.right, "line.L");
         ctx.drawText(textRenderer, "key bind -", px + 14, py + 201, C_TEXT, false);
 
-        for (int i = 0; i < 3; i++) {
-            int y0 = py + 72 + i * 38;
-            ctx.drawText(textRenderer, (i + 1) + " -", rx, y0 + 4, C_TEXT, false);
-            checkbox(ctx, rx + 112, y0 + 2, c.cmdAuto[i], "Auto <10%");
+        checkbox(ctx, rx, py + 78, c.repairOn, "/repair");
+        checkbox(ctx, rx, py + 98, c.repairAllOn, "/repair all");
+        ctx.drawText(textRenderer, "Wysyłaj co:", rx, py + 122, C_TEXT, false);
+        for (int i = 0; i < 5; i++) {
+            int x = rx + i * 38, y = py + 136;
+            boolean sel = c.repairMinutes == i + 1;
+            boolean over = in(mx, my, x, y, 34, 18);
+            ctx.fill(x, y, x + 34, y + 18, sel ? 0xFF1FA84F : (over ? C_TAB_HOVER : C_TAB));
+            ctx.drawBorder(x, y, 34, 18, sel ? 0xFF8CFFAE : C_BORDER);
+            ctx.drawCenteredTextWithShadow(textRenderer, (i + 1) + " min", x + 17, y + 5, 0xFFFFFFFF);
         }
+        ctx.drawText(textRenderer, "Działa tylko podczas kopania.", rx, py + 164, 0xFFB8D0F0, false);
     }
 
     private void renderLeave(DrawContext ctx) {
@@ -306,10 +302,19 @@ public class BoykaScreen extends Screen {
                     Config.save();
                     return true;
                 }
-                for (int i = 0; i < 3; i++) {
-                    int y0 = py + 72 + i * 38;
-                    if (in(mx, my, rx + 112, y0 + 2, checkboxWidth("Auto <10%"), 12)) {
-                        c.cmdAuto[i] = !c.cmdAuto[i];
+                if (in(mx, my, rx, py + 78, checkboxWidth("/repair"), 12)) {
+                    c.repairOn = !c.repairOn;
+                    Config.save();
+                    return true;
+                }
+                if (in(mx, my, rx, py + 98, checkboxWidth("/repair all"), 12)) {
+                    c.repairAllOn = !c.repairAllOn;
+                    Config.save();
+                    return true;
+                }
+                for (int i = 0; i < 5; i++) {
+                    if (in(mx, my, rx + i * 38, py + 136, 34, 18)) {
+                        c.repairMinutes = i + 1;
                         Config.save();
                         return true;
                     }
@@ -359,8 +364,7 @@ public class BoykaScreen extends Screen {
         Config c = Config.get();
         if (waitingFor != NONE) {
             int k = keyCode == GLFW.GLFW_KEY_ESCAPE ? -1 : keyCode;
-            if (waitingFor == MINE) c.mineKey = k;
-            else c.cmdKey[waitingFor] = k;
+            c.mineKey = k;
             waitingFor = NONE;
             Config.save();
             clearAndInit();
