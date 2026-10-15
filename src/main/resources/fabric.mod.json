@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "boyka",
+  "version": "${version}",
+  "name": "BOYKA",
+  "description": "Auto MineTask, Auto Leave, Friends i komendy na klawisz. Menu pod klawiszem J.",
+  "authors": ["BOYKA"],
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.boyka.BoykaMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
