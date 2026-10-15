@@ -189,6 +189,7 @@ public class BoykaScreen extends Screen {
             ctx.drawCenteredTextWithShadow(textRenderer, (i + 1) + " min", x + 17, y + 5, 0xFFFFFFFF);
         }
         ctx.drawText(textRenderer, "Działa tylko podczas kopania.", rx, py + 164, 0xFFB8D0F0, false);
+        checkbox(ctx, rx, py + 178, c.continuous, "Continuous playback");
     }
 
     private void renderLeave(DrawContext ctx) {
@@ -309,6 +310,11 @@ public class BoykaScreen extends Screen {
                 }
                 if (in(mx, my, rx, py + 98, checkboxWidth("/repair all"), 12)) {
                     c.repairAllOn = !c.repairAllOn;
+                    Config.save();
+                    return true;
+                }
+                if (in(mx, my, rx, py + 178, checkboxWidth("Continuous playback"), 12)) {
+                    c.continuous = !c.continuous;
                     Config.save();
                     return true;
                 }

@@ -1,6 +1,5 @@
 package com.boyka;
 
-import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
@@ -9,14 +8,20 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 
+/**
+ * AFK kopanie jak na 1.8: kopiesz blok na który patrzysz (celownik), a postać
+ * cały czas idzie bokiem (strafe) w lewo albo w prawo. Kamera jest wolna.
+ */
 public final class AutoMiner {
     public static boolean active = false;
 
-    private static BlockPos start;
-    private static Direction dir;
+    private static boolean strafeRight;
+    private static double startX, startZ, lastX, lastZ;
+    private static int stuck;
     private static int toolHotbar = -1;
     private static int swappedFrom = -1;
     private static boolean prevPause;
@@ -55,17 +60,18 @@ public final class AutoMiner {
                 swap(mc, c.toolSlot, toolHotbar);
             }
         }
-        // kierunek liczony raz, względem tego gdzie patrzysz w chwili startu
-        Direction facing = p.getHorizontalFacing();
-        dir = c.right ? facing.rotateYClockwise() : facing.rotateYCounterclockwise();
-        start = p.getBlockPos();
+        strafeRight = c.right;
+        startX = lastX = p.getX();
+        startZ = lastZ = p.getZ();
+        stuck = 0;
         ticks = 0;
         repairTimer = 0;
         repairAllAt = -1;
         prevPause = mc.options.pauseOnLostFocus;
         mc.options.pauseOnLostFocus = false; // pozwala na alt+tab bez pauzy
         active = true;
-        msg(mc, "Kopanie START (" + (c.right ? "line.R" : "line.L") + ", " + c.blocks + " kratek).");
+        msg(mc, "Kopanie START (" + (c.right ? "line.R - w prawo" : "line.L - w lewo") + ", "
+                + c.blocks + " kratek" + (c.continuous ? ", w pętli" : "") + ").");
     }
 
     public static void stop(MinecraftClient mc, String message) {
@@ -86,6 +92,19 @@ public final class AutoMiner {
         mc.options.pauseOnLostFocus = prevPause;
         releaseKeys(mc);
         swappedFrom = -1;
+    }
+
+    /** Koniec linii: w trybie pętli zawraca, inaczej zatrzymuje. Zwraca true gdy kopanie trwa dalej. */
+    private static boolean endOfLine(MinecraftClient mc, ClientPlayerEntity p, String message) {
+        if (Config.get().continuous) {
+            strafeRight = !strafeRight;
+            startX = lastX = p.getX();
+            startZ = lastZ = p.getZ();
+            stuck = 0;
+            return true;
+        }
+        stop(mc, message);
+        return false;
     }
 
     public static void tick(MinecraftClient mc) {
@@ -135,66 +154,46 @@ public final class AutoMiner {
             }
         }
 
-        // kamera jest wolna - nie ruszamy yaw/pitch
+        // ---- Ile kratek już przeszliśmy ----
+        double dx = p.getX() - startX, dz = p.getZ() - startZ;
+        if (Math.sqrt(dx * dx + dz * dz) >= c.blocks) {
+            if (!endOfLine(mc, p, "Gotowe! Przekopano " + c.blocks + " kratek.")) return;
+        }
 
-        BlockPos feet = p.getBlockPos();
-        int traveled = (feet.getX() - start.getX()) * dir.getOffsetX()
-                + (feet.getZ() - start.getZ()) * dir.getOffsetZ();
-        if (traveled >= c.blocks) {
-            stop(mc, "Gotowe! Przekopano " + traveled + " kratek.");
+        // ---- Zablokowany bok (ściana) = koniec linii ----
+        double mx = p.getX() - lastX, mz = p.getZ() - lastZ;
+        lastX = p.getX();
+        lastZ = p.getZ();
+        if (mx * mx + mz * mz < 1.0E-4) stuck++;
+        else stuck = 0;
+        if (stuck >= 60) {
+            stuck = 0;
+            if (!endOfLine(mc, p, "Zablokowano z boku - koniec linii.")) return;
+        }
+
+        // ---- Bezpieczeństwo: płyn z boku ----
+        double yaw = Math.toRadians(p.getYaw());
+        double sx = strafeRight ? -Math.cos(yaw) : Math.cos(yaw);
+        double sz = strafeRight ? -Math.sin(yaw) : Math.sin(yaw);
+        BlockPos side = BlockPos.ofFloored(p.getX() + sx, p.getY(), p.getZ() + sz);
+        if (!w.getBlockState(side).getFluidState().isEmpty()
+                || !w.getBlockState(side.down()).getFluidState().isEmpty()) {
+            stop(mc, "Płyn z boku - stop.");
             return;
         }
 
-        BlockPos front = feet.offset(dir);
-        BlockPos upper = front.up();
-        if (!w.getBlockState(front.down()).getFluidState().isEmpty()) {
-            stop(mc, "Płyn pod drogą - stop.");
-            return;
-        }
+        // ---- Idź bokiem ----
+        mc.options.forwardKey.setPressed(false);
+        mc.options.backKey.setPressed(false);
+        mc.options.rightKey.setPressed(strafeRight);
+        mc.options.leftKey.setPressed(!strafeRight);
 
-        BlockPos target = null;
-        for (BlockPos bp : new BlockPos[]{front, upper}) {
-            BlockState st = w.getBlockState(bp);
-            if (!st.getFluidState().isEmpty()) {
-                stop(mc, "Płyn na drodze - stop.");
-                return;
-            }
-            if (!st.isAir() && target == null) {
-                if (st.getHardness(w, bp) < 0) {
-                    stop(mc, "Nie do zniszczenia (bedrock?) - stop.");
-                    return;
-                }
-                target = bp;
-            }
-        }
-
-        if (target != null) {
-            steer(p, false);
-            mc.interactionManager.updateBlockBreakingProgress(target, dir.getOpposite());
+        // ---- Kop to, na co patrzysz ----
+        HitResult hit = p.raycast(4.5, 1.0f, false);
+        if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK) {
+            mc.interactionManager.updateBlockBreakingProgress(bhr.getBlockPos(), bhr.getSide());
             p.swingHand(Hand.MAIN_HAND);
-        } else {
-            steer(p, true);
         }
-    }
-
-    /** Wciska klawisze ruchu tak, żeby iść w kierunku dir niezależnie od tego, gdzie patrzy kamera. */
-    private static void steer(ClientPlayerEntity p, boolean move) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        boolean f = false, b = false, l = false, r = false;
-        if (move) {
-            double dirYaw = Math.atan2(-dir.getOffsetX(), dir.getOffsetZ());
-            double rel = dirYaw - Math.toRadians(p.getYaw());
-            double fwd = Math.cos(rel);
-            double side = Math.sin(rel);
-            f = fwd > 0.38;
-            b = fwd < -0.38;
-            r = side > 0.38;
-            l = side < -0.38;
-        }
-        mc.options.forwardKey.setPressed(f);
-        mc.options.backKey.setPressed(b);
-        mc.options.leftKey.setPressed(l);
-        mc.options.rightKey.setPressed(r);
     }
 
     private static void releaseKeys(MinecraftClient mc) {

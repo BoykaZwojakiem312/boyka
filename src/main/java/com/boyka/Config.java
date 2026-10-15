@@ -19,6 +19,7 @@ public final class Config {
     public boolean right = true;       // true = line.R, false = line.L
     public int blocks = 50;            // 0-150
     public int mineKey = -1;           // kod GLFW, -1 = brak
+    public boolean continuous = false; // continuous playback: po skończeniu linii zawraca i kopie w pętli
 
     // Auto Repair
     public boolean repairOn = false;      // wysyłaj /repair
